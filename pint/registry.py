@@ -2291,6 +2291,10 @@ class UnitRegistry(SystemRegistry, ContextRegistry, NonMultiplicativeRegistry):
 
     check = registry_helpers.check
 
+    @property
+    def constants(self):
+        return ConstantsRegistry(self)
+
 
 class LazyRegistry:
     def __init__(self, args=None, kwargs=None):
@@ -2374,3 +2378,42 @@ class ApplicationRegistry:
 
     def __iter__(self):
         return iter(self._registry)
+
+
+class ConstantsRegistry:
+
+    def __init__(self, _registry: UnitRegistry, _system: str = None):
+        self._registry = _registry
+        self._system = _system
+
+    def __getattr__(self, item):
+        if item in dir(self._registry.sys):
+            return ConstantsRegistry(self._registry, _system=item)
+
+        if self._system is not None:
+            with UnitRegistrySystemContextManager(self._registry, self._system) as temp_reg:
+                return temp_reg.Quantity(1, temp_reg.__getattr__(item)).to_base_units()
+
+        return self._registry.Quantity(1, self._registry.__getattr__(item)).to_base_units()
+
+    __getitem__ = __getattr__
+    __call__ = __getattr__
+
+    def __repr__(self):
+        if self._system is not None:
+            return f'<Dynamically created list of constants using the {self._system} system.>'
+        return f'<Dynamically created list of constants using the {self._registry.default_system} system.>'
+
+
+class UnitRegistrySystemContextManager:
+    def __init__(self, registry: UnitRegistry, context_system: str):
+        self.registry = registry
+        self.old_system = registry.default_system
+        self.context_system = context_system
+
+    def __enter__(self):
+        self.registry.default_system = self.context_system
+        return self.registry
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.registry.default_system = self.old_system
